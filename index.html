@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pilih Penjodoh Bilangan - Permainan Edutainment Bahasa Melayu</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Fredoka for vibrant primary school UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- MediaPipe Hands CDN Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    body {
+      font-family: 'Fredoka', 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      color: #f8fafc;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .glass-card.active-hover {
+      transform: scale(1.05);
+      background: rgba(59, 130, 246, 0.3);
+      border-color: #60a5fa;
+      box-shadow: 0 0 25px rgba(96, 165, 250, 0.6);
+    }
+
+    /* Target Zone Glowing Animations */
+    .zone-correct {
+      animation: pulseGreen 0.6s ease-in-out infinite alternate;
+      background: rgba(34, 197, 94, 0.45) !important;
+      border-color: #4ade80 !important;
+    }
+
+    .zone-wrong {
+      animation: pulseRed 0.6s ease-in-out infinite alternate;
+      background: rgba(239, 68, 68, 0.45) !important;
+      border-color: #f87171 !important;
+    }
+
+    @keyframes pulseGreen {
+      from { box-shadow: 0 0 10px rgba(74, 222, 128, 0.5); }
+      to { box-shadow: 0 0 30px rgba(74, 222, 128, 0.9); }
+    }
+
+    @keyframes pulseRed {
+      from { box-shadow: 0 0 10px rgba(248, 113, 113, 0.5); }
+      to { box-shadow: 0 0 30px rgba(248, 113, 113, 0.9); }
+    }
+
+    /* Mirrored canvas for intuitive hand pointer interaction */
+    canvas#output_canvas {
+      transform: scaleX(-1);
+    }
+
+    /* Floating feedback score text */
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translate(-50%, 0) scale(0.8); }
+      50% { opacity: 1; transform: translate(-50%, -40px) scale(1.2); }
+      100% { opacity: 0; transform: translate(-50%, -80px) scale(1); }
+    }
+
+    .score-popup {
+      position: absolute;
+      animation: floatUp 1s ease-out forwards;
+      pointer-events: none;
+      font-weight: 800;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col justify-between overflow-x-hidden select-none">
+
+  <header class="w-full max-w-6xl mx-auto p-4 z-20">
+    <div class="glass-panel rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+      <!-- Game Logo / Title -->
+      <div class="flex items-center space-x-3">
+        <div class="bg-gradient-to-tr from-amber-400 to-orange-500 p-3 rounded-xl text-slate-900 shadow-lg">
+          <i class="fa-solid me-1 fa-hand-pointer text-2xl"></i>
+        </div>
+        <div>
+          <h1 class="text-xl md:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-amber-300 via-orange-300 to-yellow-200">
+            Pilih Penjodoh Bilangan
+          </h1>
+          <p class="text-xs text-slate-300">Bahasa Melayu Sekolah Rendah</p>
+        </div>
+      </div>
+
+      <!-- Real-time Game HUD (Timer, Score, Lives) -->
+      <div id="gameHUD" class="hidden flex items-center gap-4 sm:gap-6 flex-wrap">
+        <!-- Pemasa / Timer -->
+        <div class="flex items-center space-x-2 bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700">
+          <i class="fa-solid fa-clock text-amber-400 text-lg"></i>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Pemasa</div>
+            <div id="timerDisplay" class="text-xl font-bold text-amber-300">60s</div>
+          </div>
+        </div>
+
+        <!-- Skor / Score -->
+        <div class="flex items-center space-x-2 bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700">
+          <i class="fa-solid fa-star text-yellow-400 text-lg"></i>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Skor</div>
+            <div id="scoreDisplay" class="text-xl font-bold text-yellow-300">0</div>
+          </div>
+        </div>
+
+        <!-- Nyawa / Lives -->
+        <div class="flex items-center space-x-2 bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700">
+          <i class="fa-solid fa-heart text-red-500 text-lg"></i>
+          <div>
+            <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Nyawa</div>
+            <div id="livesContainer" class="flex space-x-1 text-red-500 text-lg">
+              <i class="fa-solid fa-heart"></i>
+              <i class="fa-solid fa-heart"></i>
+              <i class="fa-solid fa-heart"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Control Mode Toggle & Camera Status -->
+      <div class="flex items-center space-x-2">
+        <button id="toggleControlModeBtn" class="bg-indigo-600/80 hover:bg-indigo-600 text-white px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-2 transition border border-indigo-400/30">
+          <i id="controlIcon" class="fa-solid fa-hand-pointer"></i>
+          <span id="controlModeLabel">Mod: Jari</span>
+        </button>
+        <button id="pauseBtn" class="hidden bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-xl text-xs font-semibold border border-slate-500/30">
+          <i class="fa-solid fa-pause"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="relative w-full max-w-5xl mx-auto px-4 flex-1 flex items-center justify-center">
+    
+    <!-- Video Feed Container (Hidden Webcam element) -->
+    <video id="webcam_video" class="hidden" playsinline></video>
+
+    <!-- Canvas Game Container -->
+    <div class="relative w-full aspect-[4/3] max-h-[72vh] rounded-3xl overflow-hidden glass-panel border-2 border-indigo-500/30 shadow-2xl flex items-center justify-center">
+      
+      <!-- Video Render Canvas -->
+      <canvas id="output_canvas" class="absolute inset-0 w-full h-full object-cover"></canvas>
+
+      <!-- Overlay Layer for UI elements (Noun Card & Selection Zones) -->
+      <div id="gameOverlay" class="absolute inset-0 p-4 md:p-6 flex flex-col justify-between pointer-events-none z-10">
+        
+        <!-- Top 2 Choice Zones -->
+        <div class="grid grid-cols-2 gap-4 md:gap-8 w-full">
+          <!-- Zone 0 (Top-Left) -->
+          <div id="zone0" class="glass-card rounded-2xl p-4 md:p-6 text-center border-2 border-white/20 transition-all flex flex-col justify-center items-center h-24 md:h-32">
+            <span class="text-xs uppercase text-slate-300 tracking-widest font-semibold mb-1">Pilihan A</span>
+            <span id="textOption0" class="text-xl md:text-3xl font-bold text-white tracking-wide">--</span>
+          </div>
+          <!-- Zone 1 (Top-Right) -->
+          <div id="zone1" class="glass-card rounded-2xl p-4 md:p-6 text-center border-2 border-white/20 transition-all flex flex-col justify-center items-center h-24 md:h-32">
+            <span class="text-xs uppercase text-slate-300 tracking-widest font-semibold mb-1">Pilihan B</span>
+            <span id="textOption1" class="text-xl md:text-3xl font-bold text-white tracking-wide">--</span>
+          </div>
+        </div>
+
+        <!-- Center Question Noun Display Card -->
+        <div id="questionCard" class="self-center glass-panel bg-slate-900/90 rounded-3xl p-4 md:p-6 text-center border-2 border-amber-400/40 shadow-2xl transition-transform duration-300 transform scale-100 max-w-sm w-full mx-auto my-auto">
+          <div id="nounEmoji" class="text-5xl md:text-7xl mb-2 animate-bounce">🐱</div>
+          <div class="text-xs text-amber-300 font-semibold tracking-wider uppercase mb-1">Apakah Penjodoh Bilangan Bagi:</div>
+          <div id="nounWord" class="text-2xl md:text-4xl font-extrabold text-white tracking-wide underline decoration-amber-400 decoration-wavy">Kucing</div>
+        </div>
+
+        <!-- Bottom 2 Choice Zones -->
+        <div class="grid grid-cols-2 gap-4 md:gap-8 w-full">
+          <!-- Zone 2 (Bottom-Left) -->
+          <div id="zone2" class="glass-card rounded-2xl p-4 md:p-6 text-center border-2 border-white/20 transition-all flex flex-col justify-center items-center h-24 md:h-32">
+            <span class="text-xs uppercase text-slate-300 tracking-widest font-semibold mb-1">Pilihan C</span>
+            <span id="textOption2" class="text-xl md:text-3xl font-bold text-white tracking-wide">--</span>
+          </div>
+          <!-- Zone 3 (Bottom-Right) -->
+          <div id="zone3" class="glass-card rounded-2xl p-4 md:p-6 text-center border-2 border-white/20 transition-all flex flex-col justify-center items-center h-24 md:h-32">
+            <span class="text-xs uppercase text-slate-300 tracking-widest font-semibold mb-1">Pilihan D</span>
+            <span id="textOption3" class="text-xl md:text-3xl font-bold text-white tracking-wide">--</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Dynamic Feedback Popup Container -->
+      <div id="feedbackContainer" class="absolute inset-0 pointer-events-none z-20"></div>
+
+      <div id="startScreen" class="absolute inset-0 z-30 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
+        <div class="max-w-md w-full bg-slate-900/95 border border-indigo-500/30 p-6 md:p-8 rounded-3xl shadow-2xl">
+          <div class="w-20 h-20 bg-gradient-to-tr from-amber-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg text-slate-950 text-4xl">
+            <i class="fa-solid fa-hand-pointer"></i>
+          </div>
+          <h2 class="text-2xl md:text-3xl font-bold text-white mb-2">Pilih Penjodoh Bilangan</h2>
+          <p class="text-slate-300 text-sm mb-6 leading-relaxed">
+            Satu gambar atau kata nama akan muncul di tengah skrin. Tunjukkan jari telunjuk anda dan **tahan (Dwell 1 saat)** pada pilihan penjodoh bilangan yang betul!
+          </p>
+
+          <!-- Instruction Steps -->
+          <div class="space-y-3 text-left mb-6 text-xs text-slate-300 bg-slate-800/60 p-4 rounded-2xl border border-slate-700">
+            <div class="flex items-center space-x-3">
+              <span class="w-6 h-6 rounded-full bg-amber-500 text-slate-950 font-bold flex items-center justify-center text-xs">1</span>
+              <span>Pastikan kamera menunjukkan tangan anda dengan jelas.</span>
+            </div>
+            <div class="flex items-center space-x-3">
+              <span class="w-6 h-6 rounded-full bg-amber-500 text-slate-950 font-bold flex items-center justify-center text-xs">2</span>
+              <span>Halakan hujung jari telunjuk ke kad jawapan pilihan.</span>
+            </div>
+            <div class="flex items-center space-x-3">
+              <span class="w-6 h-6 rounded-full bg-amber-500 text-slate-950 font-bold flex items-center justify-center text-xs">3</span>
+              <span>Tahan kedudukan kursor jari selama **1 saat** sehingga bulatan penuh.</span>
+            </div>
+          </div>
+
+          <button id="startGameBtn" class="w-full py-4 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-extrabold text-lg rounded-2xl shadow-xl transition transform active:scale-95 flex items-center justify-center space-x-2">
+            <i class="fa-solid fa-play"></i>
+            <span>Mula Bermain!</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="gameOverScreen" class="hidden absolute inset-0 z-30 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
+        <div class="max-w-md w-full bg-slate-900/95 border border-indigo-500/30 p-6 md:p-8 rounded-3xl shadow-2xl">
+          <div id="gameOverIcon" class="w-20 h-20 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-400/40 text-4xl">
+            <i class="fa-solid fa-trophy"></i>
+          </div>
+          
+          <h2 id="gameOverTitle" class="text-3xl font-extrabold text-white mb-1">Masa Tamat!</h2>
+          <p id="gameOverSubtitle" class="text-slate-400 text-xs mb-6">Syabas! Anda telah menyelesaikan cabaran ini.</p>
+
+          <!-- Score Summary Box -->
+          <div class="bg-slate-800/80 rounded-2xl p-4 border border-slate-700 mb-6 space-y-3">
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-slate-400">Jumlah Skor:</span>
+              <span id="finalScore" class="text-2xl font-black text-amber-300">0</span>
+            </div>
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-slate-400">Jawapan Betul:</span>
+              <span id="correctCount" class="text-lg font-bold text-emerald-400">0</span>
+            </div>
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-slate-400">Rekod Tertinggi:</span>
+              <span id="highScoreDisplay" class="text-lg font-bold text-yellow-400">0</span>
+            </div>
+          </div>
+
+          <button id="restartGameBtn" class="w-full py-4 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 text-slate-950 font-extrabold text-lg rounded-2xl shadow-xl transition transform active:scale-95 flex items-center justify-center space-x-2">
+            <i class="fa-solid fa-rotate-right"></i>
+            <span>Main Lagi</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="w-full max-w-6xl mx-auto p-4 text-center text-xs text-slate-400 z-20">
+    <p>Aplikasi Edutainment Bahasa Melayu Sekolah Rendah &copy; 2026 | Dikuasakan oleh MediaPipe Hands</p>
+  </footer>
+
+  <script>
+    /* =========================================================================
+       1. QUESTION BANK DATA (Soalan & Penjodoh Bilangan Bahasa Melayu)
+       ========================================================================= */
+    const QUESTION_BANK = [
+      { noun: "Kucing", emoji: "🐱", correct: "ekor", options: ["ekor", "buah", "biji", "batang"] },
+      { noun: "Kereta", emoji: "🚗", correct: "buah", options: ["buah", "ekor", "batang", "keping"] },
+      { noun: "Pensel", emoji: "✏️", correct: "batang", options: ["batang", "biji", "buah", "helai"] },
+      { noun: "Epal", emoji: "🍎", correct: "biji", options: ["biji", "keping", "ekor", "batang"] },
+      { noun: "Baju T-Shirt", emoji: "👕", correct: "helai", options: ["helai", "keping", "buah", "pasang"] },
+      { noun: "Roti", emoji: "🍞", correct: "keping", options: ["keping", "helai", "biji", "batang"] },
+      { noun: "Cincin", emoji: "💍", correct: "bentuk", options: ["bentuk", "biji", "buah", "keping"] },
+      { noun: "Kasut", emoji: "👟", correct: "pasang", options: ["pasang", "helai", "buah", "bentuk"] },
+      { noun: "Bunga Rose", emoji: "🌹", correct: "kuntum", options: ["kuntum", "helai", "batang", "biji"] },
+      { noun: "Surat Khabar", emoji: "📰", correct: "naskah", options: ["naskah", "helai", "keping", "buah"] },
+      { noun: "Gunting", emoji: "✂️️", correct: "bilah", options: ["bilah", "batang", "keping", "buah"] },
+      { noun: "Pisau", emoji: "🔪", correct: "bilah", options: ["bilah", "batang", "biji", "buah"] },
+      { noun: "Gajah", emoji: "🐘", correct: "ekor", options: ["ekor", "buah", "batang", "biji"] },
+      { noun: "Rumah", emoji: "🏠", correct: "buah", options: ["buah", "biji", "batang", "keping"] },
+      { noun: "Daun", emoji: "🍃", correct: "helai", options: ["helai", "keping", "biji", "buah"] },
+      { noun: "Pokok Kelapa", emoji: "🌴", correct: "batang", options: ["batang", "buah", "ekor", "biji"] },
+      { noun: "Payung", emoji: "☂️", correct: "kaki", options: ["kaki", "batang", "buah", "helai"] },
+      { noun: "Tembikai", emoji: "🍉", correct: "biji", options: ["biji", "buah", "keping", "ekor"] },
+      { noun: "Sampul Surat", emoji: "✉️", correct: "keping", options: ["keping", "helai", "biji", "naskah"] },
+      { noun: "Burung", emoji: "🐦", correct: "ekor", options: ["ekor", "kuntum", "buah", "batang"] },
+      { noun: "Basikal", emoji: "🚲", correct: "buah", options: ["buah", "batang", "ekor", "pasang"] },
+      { noun: "Jarum", emoji: "🪡", correct: "batang", options: ["batang", "bilah", "biji", "keping"] },
+      { noun: "Pisang (Sikat)", emoji: "🍌", correct: "sikat", options: ["sikat", "biji", "batang", "keping"] },
+      { noun: "Kunci", emoji: "🔑", correct: "jambak", options: ["jambak", "buah", "batang", "bilah"] },
+      { noun: "Bawang", emoji: "🧅", correct: "biji", options: ["biji", "buah", "keping", "helai"] }
+    ];
+
+    /* =========================================================================
+       2. AUDIO SYNTHESIS (Web Audio API Synthesizer)
+       ========================================================================= */
+    class SoundEffects {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playHover() {
+        this.init();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.08);
+      }
+
+      playDwellTone(progress) {
+        this.init();
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        const startFreq = 300;
+        const endFreq = 800;
+        osc.frequency.setValueAtTime(startFreq + (endFreq - startFreq) * progress, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.03, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.05);
+      }
+
+      playCorrect() {
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const freqs = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        freqs.forEach((f, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f, now + idx * 0.08);
+          gain.gain.setValueAtTime(0.15, now + idx * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.25);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + idx * 0.08);
+          osc.stop(now + idx * 0.08 + 0.25);
+        });
+      }
+
+      playWrong() {
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(110, now + 0.3);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.3);
+      }
+
+      playGameOver() {
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const freqs = [400, 350, 300, 250];
+        freqs.forEach((f, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f, now + idx * 0.15);
+          gain.gain.setValueAtTime(0.15, now + idx * 0.15);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.15 + 0.3);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + idx * 0.15);
+          osc.stop(now + idx * 0.15 + 0.3);
+        });
+      }
+    }
+
+    const sfx = new SoundEffects();
+
+    /* =========================================================================
+       3. GAME STATE MANAGEMENT
+       ========================================================================= */
+    const DWELL_DURATION_MS = 1000; // 1 second dwell duration requirement
+    
+    let gameState = {
+      active: false,
+      isPaused: false,
+      controlMode: 'hand', // 'hand' or 'mouse'
+      score: 0,
+      lives: 3,
+      timeLeft: 60,
+      correctCount: 0,
+      shuffledQuestions: [],
+      currentQuestionIndex: 0,
+      timerInterval: null,
+      
+      // Hand Tracking & Cursor Dwell Variables
+      cursor: { x: -1, y: -1, rawX: -1, rawY: -1 },
+      activeZoneIndex: null,
+      dwellStartTime: null,
+      dwellProgress: 0,
+      isAnswering: false
+    };
+
+    // DOM Elements Reference
+    const videoElement = document.getElementById('webcam_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    
+    const startScreen = document.getElementById('startScreen');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const gameHUD = document.getElementById('gameHUD');
+    
+    const timerDisplay = document.getElementById('timerDisplay');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const livesContainer = document.getElementById('livesContainer');
+    
+    const nounEmoji = document.getElementById('nounEmoji');
+    const nounWord = document.getElementById('nounWord');
+    const questionCard = document.getElementById('questionCard');
+    
+    const zoneElements = [
+      document.getElementById('zone0'),
+      document.getElementById('zone1'),
+      document.getElementById('zone2'),
+      document.getElementById('zone3')
+    ];
+    
+    const textOptionElements = [
+      document.getElementById('textOption0'),
+      document.getElementById('textOption1'),
+      document.getElementById('textOption2'),
+      document.getElementById('textOption3')
+    ];
+
+    const toggleControlBtn = document.getElementById('toggleControlModeBtn');
+    const controlIcon = document.getElementById('controlIcon');
+    const controlModeLabel = document.getElementById('controlModeLabel');
+
+    /* =========================================================================
+       4. INITIALIZATION & RESIZING
+       ========================================================================= */
+    function resizeCanvas() {
+      const container = canvasElement.parentElement;
+      canvasElement.width = container.clientWidth;
+      canvasElement.height = container.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Fisher-Yates Shuffle
+    function shuffleArray(array) {
+      const arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    /* =========================================================================
+       5. GAME FLOW CONTROLLER
+       ========================================================================= */
+    function startGame() {
+      sfx.init();
+      
+      gameState.active = true;
+      gameState.isPaused = false;
+      gameState.score = 0;
+      gameState.lives = 3;
+      gameState.timeLeft = 60;
+      gameState.correctCount = 0;
+      gameState.shuffledQuestions = shuffleArray(QUESTION_BANK);
+      gameState.currentQuestionIndex = 0;
+      gameState.isAnswering = false;
+
+      // Update UI displays
+      updateHUD();
+      startScreen.classList.add('hidden');
+      gameOverScreen.classList.add('hidden');
+      gameHUD.classList.remove('hidden');
+
+      loadQuestion();
+
+      // Start 60-Second Countdown Timer
+      clearInterval(gameState.timerInterval);
+      gameState.timerInterval = setInterval(() => {
+        if (!gameState.active || gameState.isPaused) return;
+        gameState.timeLeft--;
+        timerDisplay.textContent = `${gameState.timeLeft}s`;
+        
+        if (gameState.timeLeft <= 10) {
+          timerDisplay.classList.add('text-red-400', 'animate-pulse');
+        } else {
+          timerDisplay.classList.remove('text-red-400', 'animate-pulse');
+        }
+
+        if (gameState.timeLeft <= 0) {
+          endGame();
+        }
+      }, 1000);
+    }
+
+    function loadQuestion() {
+      if (gameState.currentQuestionIndex >= gameState.shuffledQuestions.length) {
+        // Reshuffle if reached end of question bank
+        gameState.shuffledQuestions = shuffleArray(QUESTION_BANK);
+        gameState.currentQuestionIndex = 0;
+      }
+
+      const q = gameState.shuffledQuestions[gameState.currentQuestionIndex];
+      nounEmoji.textContent = q.emoji;
+      nounWord.textContent = q.noun;
+
+      // Shuffle options for the 4 zones
+      const shuffledOptions = shuffleArray(q.options);
+      shuffledOptions.forEach((opt, idx) => {
+        textOptionElements[idx].textContent = opt.toUpperCase();
+        zoneElements[idx].dataset.optionValue = opt;
+        
+        // Reset zone styles
+        zoneElements[idx].className = 'glass-card rounded-2xl p-4 md:p-6 text-center border-2 border-white/20 transition-all flex flex-col justify-center items-center h-24 md:h-32';
+      });
+
+      // Animate Question Card Entry
+      questionCard.classList.remove('scale-100');
+      questionCard.classList.add('scale-90');
+      setTimeout(() => questionCard.classList.add('scale-100'), 50);
+
+      gameState.isAnswering = false;
+      resetDwell();
+    }
+
+    function updateHUD() {
+      scoreDisplay.textContent = gameState.score;
+      timerDisplay.textContent = `${gameState.timeLeft}s`;
+
+      // Render Hearts for Lives
+      livesContainer.innerHTML = '';
+      for (let i = 0; i < 3; i++) {
+        if (i < gameState.lives) {
+          livesContainer.innerHTML += '<i class="fa-solid fa-heart text-red-500"></i>';
+        } else {
+          livesContainer.innerHTML += '<i class="fa-regular fa-heart text-slate-600"></i>';
+        }
+      }
+    }
+
+    function triggerScorePopup(text, colorClass, x, y) {
+      const popup = document.createElement('div');
+      popup.className = `score-popup text-2xl ${colorClass}`;
+      popup.textContent = text;
+      popup.style.left = `${x}px`;
+      popup.style.top = `${y}px`;
+      
+      const container = document.getElementById('feedbackContainer');
+      container.appendChild(popup);
+      setTimeout(() => popup.remove(), 1000);
+    }
+
+    function handleAnswerSelection(zoneIndex) {
+      if (gameState.isAnswering || !gameState.active) return;
+      gameState.isAnswering = true;
+
+      const currentQ = gameState.shuffledQuestions[gameState.currentQuestionIndex];
+      const selectedOption = zoneElements[zoneIndex].dataset.optionValue;
+      const isCorrect = (selectedOption === currentQ.correct);
+
+      const zoneRect = zoneElements[zoneIndex].getBoundingClientRect();
+      const parentRect = canvasElement.parentElement.getBoundingClientRect();
+      const clickX = zoneRect.left - parentRect.left + zoneRect.width / 2;
+      const clickY = zoneRect.top - parentRect.top + zoneRect.height / 2;
+
+      if (isCorrect) {
+        sfx.playCorrect();
+        gameState.score += 10;
+        gameState.correctCount++;
+        zoneElements[zoneIndex].classList.add('zone-correct');
+        triggerScorePopup('+10 SKOR!', 'text-emerald-400', clickX, clickY);
+      } else {
+        sfx.playWrong();
+        gameState.lives--;
+        zoneElements[zoneIndex].classList.add('zone-wrong');
+        triggerScorePopup('SALAH!', 'text-red-400', clickX, clickY);
+
+        // Highlight correct zone as feedback
+        const correctIdx = zoneElements.findIndex(z => z.dataset.optionValue === currentQ.correct);
+        if (correctIdx !== -1) {
+          zoneElements[correctIdx].classList.add('zone-correct');
+        }
+      }
+
+      updateHUD();
+
+      // Check for Game Over condition
+      if (gameState.lives <= 0) {
+        setTimeout(endGame, 1200);
+      } else {
+        // Advance to next question after short delay
+        setTimeout(() => {
+          gameState.currentQuestionIndex++;
+          loadQuestion();
+        }, 1200);
+      }
+    }
+
+    function endGame() {
+      gameState.active = false;
+      clearInterval(gameState.timerInterval);
+      sfx.playGameOver();
+
+      // High Score persistence
+      const savedHighScore = localStorage.getItem('penjodoh_high_score') || 0;
+      const isNewHigh = gameState.score > savedHighScore;
+      if (isNewHigh) {
+        localStorage.setItem('penjodoh_high_score', gameState.score);
+      }
+
+      document.getElementById('finalScore').textContent = gameState.score;
+      document.getElementById('correctCount').textContent = `${gameState.correctCount} soalan`;
+      document.getElementById('highScoreDisplay').textContent = Math.max(gameState.score, savedHighScore);
+
+      gameOverScreen.classList.remove('hidden');
+    }
+
+    /* =========================================================================
+       6. DWELL SELECTION ALGORITHM
+       ========================================================================= */
+    function resetDwell() {
+      gameState.activeZoneIndex = null;
+      gameState.dwellStartTime = null;
+      gameState.dwellProgress = 0;
+      zoneElements.forEach(z => z.classList.remove('active-hover'));
+    }
+
+    function checkDwellSelection(cursorX, cursorY) {
+      if (gameState.isAnswering || !gameState.active) return;
+
+      const parentRect = canvasElement.parentElement.getBoundingClientRect();
+      let hoveredZoneIndex = null;
+
+      // Detect collision between pointer cursor and the 4 choice cards
+      zoneElements.forEach((zone, idx) => {
+        const rect = zone.getBoundingClientRect();
+        const relLeft = rect.left - parentRect.left;
+        const relTop = rect.top - parentRect.top;
+
+        if (
+          cursorX >= relLeft &&
+          cursorX <= relLeft + rect.width &&
+          cursorY >= relTop &&
+          cursorY <= relTop + rect.height
+        ) {
+          hoveredZoneIndex = idx;
+        }
+      });
+
+      if (hoveredZoneIndex !== null) {
+        if (gameState.activeZoneIndex !== hoveredZoneIndex) {
+          // Entering a new zone
+          gameState.activeZoneIndex = hoveredZoneIndex;
+          gameState.dwellStartTime = performance.now();
+          gameState.dwellProgress = 0;
+          sfx.playHover();
+          
+          zoneElements.forEach((z, i) => {
+            if (i === hoveredZoneIndex) z.classList.add('active-hover');
+            else z.classList.remove('active-hover');
+          });
+        } else {
+          // Continuing dwell inside current zone
+          const elapsed = performance.now() - gameState.dwellStartTime;
+          gameState.dwellProgress = Math.min(1.0, elapsed / DWELL_DURATION_MS);
+          
+          sfx.playDwellTone(gameState.dwellProgress);
+
+          if (gameState.dwellProgress >= 1.0) {
+            handleAnswerSelection(hoveredZoneIndex);
+            resetDwell();
+          }
+        }
+      } else {
+        // Outside any selection zone
+        resetDwell();
+      }
+    }
+
+    /* =========================================================================
+       7. MEDIAPIPE HANDS TRACKING & CANVAS RENDERING
+       ========================================================================= */
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
+
+    hands.onResults(onHandResults);
+
+    function onHandResults(results) {
+      // Clear Canvas Frame
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+      // Render Mirrored Camera Feed
+      if (results.image) {
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      }
+
+      if (gameState.controlMode === 'hand' && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+
+        // Landmark 8 is INDEX_FINGER_TIP
+        const indexTip = landmarks[8];
+
+        // Mirrored coordinate mapping
+        const targetX = (1 - indexTip.x) * canvasElement.width;
+        const targetY = indexTip.y * canvasElement.height;
+
+        // Smooth cursor positioning (Exponential Moving Average / Lerp)
+        if (gameState.cursor.x === -1) {
+          gameState.cursor.x = targetX;
+          gameState.cursor.y = targetY;
+        } else {
+          gameState.cursor.x += (targetX - gameState.cursor.x) * 0.4;
+          gameState.cursor.y += (targetY - gameState.cursor.y) * 0.4;
+        }
+
+        // Draw Skeleton Landmark Connectors
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: 'rgba(96, 165, 250, 0.4)', lineWidth: 3 });
+        drawLandmarks(canvasCtx, landmarks, { color: '#f59e0b', lineWidth: 1, radius: 4 });
+
+        // Dwell selection check
+        checkDwellSelection(gameState.cursor.x, gameState.cursor.y);
+      }
+
+      // Render Custom Hand Pointer Cursor and Radial Dwell Progress Ring
+      if (gameState.cursor.x >= 0 && gameState.cursor.y >= 0) {
+        // Canvas is mirrored via CSS scaleX(-1). To render unmirrored text/cursor properly on canvas,
+        // we invert the X coordinate for context rendering or draw standard overlay.
+        const drawX = canvasElement.width - gameState.cursor.x;
+        const drawY = gameState.cursor.y;
+
+        // Outer Glow
+        canvasCtx.beginPath();
+        canvasCtx.arc(drawX, drawY, 18, 0, 2 * Math.PI);
+        canvasCtx.fillStyle = 'rgba(245, 158, 11, 0.3)';
+        canvasCtx.fill();
+
+        // Inner Cursor Tip Circle
+        canvasCtx.beginPath();
+        canvasCtx.arc(drawX, drawY, 8, 0, 2 * Math.PI);
+        canvasCtx.fillStyle = '#f59e0b';
+        canvasCtx.strokeStyle = '#ffffff';
+        canvasCtx.lineWidth = 2;
+        canvasCtx.fill();
+        canvasCtx.stroke();
+
+        // Dwell Countdown Radial Progress Ring
+        if (gameState.dwellProgress > 0) {
+          canvasCtx.beginPath();
+          canvasCtx.arc(
+            drawX, 
+            drawY, 
+            26, 
+            -Math.PI / 2, 
+            (-Math.PI / 2) + (Math.PI * 2 * gameState.dwellProgress)
+          );
+          canvasCtx.strokeStyle = '#38bdf8';
+          canvasCtx.lineWidth = 5;
+          canvasCtx.lineCap = 'round';
+          canvasCtx.stroke();
+        }
+      }
+
+      canvasCtx.restore();
+    }
+
+    // Camera Feed Utility Setup
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        if (gameState.controlMode === 'hand') {
+          await hands.send({ image: videoElement });
+        } else {
+          // If in Mouse mode, still draw video background frame
+          canvasCtx.save();
+          canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+          canvasCtx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+          
+          if (gameState.cursor.x >= 0 && gameState.cursor.y >= 0) {
+            checkDwellSelection(gameState.cursor.x, gameState.cursor.y);
+          }
+          canvasCtx.restore();
+        }
+      },
+      width: 640,
+      height: 480
+    });
+
+    camera.start().catch(err => {
+      console.warn("Webcam blocked or unavailable. Falling back to mouse/touch mode.", err);
+      setControlMode('mouse');
+    });
+
+    /* =========================================================================
+       8. MOUSE / TOUCH FALLBACK HANDLER
+       ========================================================================= */
+    function setControlMode(mode) {
+      gameState.controlMode = mode;
+      if (mode === 'mouse') {
+        controlIcon.className = "fa-solid fa-mouse-pointer";
+        controlModeLabel.textContent = "Mod: Tetikus";
+      } else {
+        controlIcon.className = "fa-solid fa-hand-pointer";
+        controlModeLabel.textContent = "Mod: Jari";
+      }
+    }
+
+    toggleControlBtn.addEventListener('click', () => {
+      if (gameState.controlMode === 'hand') {
+        setControlMode('mouse');
+      } else {
+        setControlMode('hand');
+      }
+    });
+
+    // Track Mouse / Touch position over Canvas Container
+    canvasElement.parentElement.addEventListener('mousemove', (e) => {
+      if (gameState.controlMode === 'mouse') {
+        const rect = canvasElement.parentElement.getBoundingClientRect();
+        gameState.cursor.x = e.clientX - rect.left;
+        gameState.cursor.y = e.clientY - rect.top;
+      }
+    });
+
+    canvasElement.parentElement.addEventListener('touchmove', (e) => {
+      if (gameState.controlMode === 'mouse' && e.touches.length > 0) {
+        const rect = canvasElement.parentElement.getBoundingClientRect();
+        gameState.cursor.x = e.touches[0].clientX - rect.left;
+        gameState.cursor.y = e.touches[0].clientY - rect.top;
+      }
+    });
+
+    /* =========================================================================
+       9. EVENT LISTENERS
+       ========================================================================= */
+    document.getElementById('startGameBtn').addEventListener('click', startGame);
+    document.getElementById('restartGameBtn').addEventListener('click', startGame);
+
+    // Initial canvas setup
+    window.onload = () => {
+      resizeCanvas();
+    };
+  </script>
+</body>
+</html>
